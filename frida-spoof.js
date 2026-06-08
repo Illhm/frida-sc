@@ -28,7 +28,7 @@ function _pad(n, width) {
 }
 
 function _randomPaddedInt(length) {
-    return _pad(_randomInt(0, Math.pow(10, length)), length);
+    return _pad(_randomInt(0, Math.pow(10, length) - 1), length);
 }
 
 function _randomSerialNo() {
@@ -136,14 +136,70 @@ function _getRandomDevice() {
     };
 }
 
+function _randomUuid() {
+    var hex = _randomHex(32);
+    return hex.substring(0, 8) + "-" + hex.substring(8, 12) + "-" + hex.substring(12, 16) + "-" + hex.substring(16, 20) + "-" + hex.substring(20);
+}
+
+function _randomImei() {
+    var base = _randomPaddedInt(14);
+    return base + _luhn_getcheck(base);
+}
+
+function _randomIccid() {
+    var base = "89" + _randomPaddedInt(16);
+    return base + _luhn_getcheck(base);
+}
+
+function _randomMacBytes() {
+    var mac = [];
+    for (var i = 0; i < 6; i++) {
+        mac.push(_randomInt(0, 255));
+    }
+
+    // Locally administered unicast MAC: realistic for randomized Android Wi-Fi MACs.
+    mac[0] = (mac[0] | 0x02) & 0xfe;
+    return mac;
+}
+
+function _macBytesToString(mac) {
+    return mac.map(function(x) { return _pad(x.toString(16), 2); }).join(":").toUpperCase();
+}
+
+function createSpoofProfile(deviceData) {
+    var serialNo = _randomSerialNo();
+    var androidId = _randomHex(16);
+    var phone = _randomPaddedInt(10);
+    var imei = _randomImei();
+    var imsi = _randomPaddedInt(15);
+    var iccid = _randomIccid();
+    var macBytes = _randomMacBytes();
+
+    return {
+        serialNo: serialNo,
+        androidId: androidId,
+        phone: phone,
+        imei: imei,
+        imsi: imsi,
+        iccid: iccid,
+        macBytes: macBytes,
+        macString: _macBytesToString(macBytes),
+        advertisingId: _randomUuid(),
+        bootTime: Date.now() - _randomInt(3600000, 604800000),
+        firstInstallTime: Date.now() - _randomInt(86400000, 604800000),
+        lastUpdateTime: Date.now(),
+        deviceName: deviceData.DEVICE_NAME || deviceData.DEVICE_FULL_NAME || deviceData.MODEL
+    };
+}
+
 /* ========== EXTENDED SYSTEM PROPERTIES HOOKING ========== */
 
-function hookExtendedSystemProperties(deviceData) {
+function hookExtendedSystemProperties(deviceData, spoofProfile) {
     logInfo("Hooking EXTENDED system properties (real new device)...");
 
     try {
         var System = Java.use("java.lang.System");
-        var serialNo = _randomSerialNo();
+        var serialNo = spoofProfile.serialNo;
 
         var propertyMap = {
             // Standard Device Properties
@@ -192,6 +248,24 @@ function hookExtendedSystemProperties(deviceData) {
             "ro.boot.verifiedbootstate": "green",
             "ro.boot.flash.locked": "1",
 
+            // Market/device names often used by Device Info apps and OEM SDKs
+            "ro.product.marketname": deviceData.DEVICE_NAME,
+            "ro.vendor.product.marketname": deviceData.DEVICE_NAME,
+            "ro.product.vendor.marketname": deviceData.DEVICE_NAME,
+            "ro.config.marketing_name": deviceData.DEVICE_NAME,
+            "ro.product.system.model": deviceData.MODEL,
+            "ro.product.vendor.model": deviceData.MODEL,
+            "ro.product.odm.model": deviceData.MODEL,
+            "ro.product.system.device": deviceData.DEVICE,
+            "ro.product.vendor.device": deviceData.DEVICE,
+            "ro.product.odm.device": deviceData.DEVICE,
+            "ro.product.system.brand": deviceData.BRAND,
+            "ro.product.vendor.brand": deviceData.BRAND,
+            "ro.product.odm.brand": deviceData.BRAND,
+            "ro.product.system.manufacturer": deviceData.MANUFACTURER,
+            "ro.product.vendor.manufacturer": deviceData.MANUFACTURER,
+            "ro.product.odm.manufacturer": deviceData.MANUFACTURER,
+
             // Network Hostname
             "net.hostname": deviceData.DEVICE,
             "net.change": _randomHex(16)
@@ -205,6 +279,52 @@ function hookExtendedSystemProperties(deviceData) {
             return this.getProperty(key);
         };
 
+        try {
+            var SystemProperties = Java.use("android.os.SystemProperties");
+
+            SystemProperties.get.overload("java.lang.String").implementation = function(key) {
+                if (propertyMap[key] !== undefined) {
+                    logDebug("SystemProperties.get(\"" + key + "\") -> " + propertyMap[key]);
+                    return propertyMap[key];
+                }
+                return this.get(key);
+            };
+
+            SystemProperties.get.overload("java.lang.String", "java.lang.String").implementation = function(key, def) {
+                if (propertyMap[key] !== undefined) {
+                    logDebug("SystemProperties.get(\"" + key + "\", def) -> " + propertyMap[key]);
+                    return propertyMap[key];
+                }
+                return this.get(key, def);
+            };
+
+            try {
+                SystemProperties.native_get.overload("java.lang.String").implementation = function(key) {
+                    if (propertyMap[key] !== undefined) {
+                        logDebug("SystemProperties.native_get(\"" + key + "\") -> " + propertyMap[key]);
+                        return propertyMap[key];
+                    }
+                    return this.native_get(key);
+                };
+            } catch (nativeOneArgErr) {
+                logDebug("SystemProperties.native_get 1-arg hook skipped: " + nativeOneArgErr.message);
+            }
+
+            try {
+                SystemProperties.native_get.overload("java.lang.String", "java.lang.String").implementation = function(key, def) {
+                    if (propertyMap[key] !== undefined) {
+                        logDebug("SystemProperties.native_get(\"" + key + "\", def) -> " + propertyMap[key]);
+                        return propertyMap[key];
+                    }
+                    return this.native_get(key, def);
+                };
+            } catch (nativeTwoArgErr) {
+                logDebug("SystemProperties.native_get 2-arg hook skipped: " + nativeTwoArgErr.message);
+            }
+        } catch (e) {
+            logDebug("SystemProperties hook skipped: " + e.message);
+        }
+
         logSuccess("Extended system properties hooked");
 
     } catch (err) {
@@ -214,12 +334,12 @@ function hookExtendedSystemProperties(deviceData) {
 
 /* ========== BUILD CLASS DEEP HOOKING ========== */
 
-function deepSpoofBuildProperties(deviceData) {
+function deepSpoofBuildProperties(deviceData, spoofProfile) {
     logInfo("Deep spoofing ALL Build class fields...");
 
     try {
         var Build = Java.use("android.os.Build");
-        var serialNo = _randomSerialNo();
+        var serialNo = spoofProfile.serialNo;
 
         var buildFields = {
             "DEVICE": deviceData.DEVICE,
@@ -262,6 +382,15 @@ function deepSpoofBuildProperties(deviceData) {
             }
         }
 
+        try {
+            Build.getSerial.overload().implementation = function() {
+                logDebug("Build.getSerial() -> " + serialNo);
+                return serialNo;
+            };
+        } catch (e) {
+            logDebug("Build.getSerial hook skipped: " + e.message);
+        }
+
         logSuccess("Build properties deep spoofed");
 
     } catch (err) {
@@ -297,43 +426,115 @@ function spoofBuildVersion(deviceData) {
 
 /* ========== DEVICE SETTINGS HOOKING ========== */
 
-function hookDeviceSettings(deviceData) {
+function hookDeviceSettings(deviceData, spoofProfile) {
     logInfo("Hooking Device Settings...");
 
-    try {
-        var SettingsGlobal = Java.use("android.provider.Settings$Global");
+    var spoofedDeviceName = spoofProfile.deviceName;
+    var deviceNameSettings = {
+        "device_name": spoofedDeviceName,
+        "bluetooth_name": spoofedDeviceName,
+        "wifi_p2p_device_name": spoofedDeviceName,
+        "lock_screen_owner_info": "",
+        "lock_screen_owner_info_enabled": "0"
+    };
 
-        SettingsGlobal.getString.overload("android.content.ContentResolver", "java.lang.String").implementation = function(resolver, name) {
-            if (name === "device_name") {
-                logDebug("device_name -> " + deviceData.DEVICE_FULL_NAME);
-                return deviceData.DEVICE_FULL_NAME;
+    function hookSettingsClass(className) {
+        try {
+            var SettingsClass = Java.use(className);
+
+            try {
+                SettingsClass.getString.overload("android.content.ContentResolver", "java.lang.String").implementation = function(resolver, name) {
+                    if (deviceNameSettings[name] !== undefined) {
+                        logDebug(className + ".getString(" + name + ") -> " + deviceNameSettings[name]);
+                        return deviceNameSettings[name];
+                    }
+                    return this.getString(resolver, name);
+                };
+            } catch (e) {
+                logDebug(className + ".getString hook skipped: " + e.message);
             }
-            return this.getString(resolver, name);
-        };
 
-        logSuccess("Device Settings hooked");
-
-    } catch (err) {
-        logError("Settings hooking error: " + err.message);
+            try {
+                SettingsClass.getStringForUser.overload("android.content.ContentResolver", "java.lang.String", "int").implementation = function(resolver, name, userHandle) {
+                    if (deviceNameSettings[name] !== undefined) {
+                        logDebug(className + ".getStringForUser(" + name + ") -> " + deviceNameSettings[name]);
+                        return deviceNameSettings[name];
+                    }
+                    return this.getStringForUser(resolver, name, userHandle);
+                };
+            } catch (e) {
+                logDebug(className + ".getStringForUser hook skipped: " + e.message);
+            }
+        } catch (err) {
+            logDebug(className + " hook unavailable: " + err.message);
+        }
     }
+
+    hookSettingsClass("android.provider.Settings$Global");
+    hookSettingsClass("android.provider.Settings$Secure");
+    hookSettingsClass("android.provider.Settings$System");
+
+    try {
+        var BluetoothAdapter = Java.use("android.bluetooth.BluetoothAdapter");
+        BluetoothAdapter.getName.overload().implementation = function() {
+            logDebug("BluetoothAdapter.getName() -> " + spoofedDeviceName);
+            return spoofedDeviceName;
+        };
+    } catch (err) {
+        logDebug("Bluetooth name hook unavailable: " + err.message);
+    }
+
+    try {
+        var Build = Java.use("android.os.Build");
+        Build.getRadioVersion.overload().implementation = function() {
+            logDebug("Build.getRadioVersion() -> " + deviceData.RADIO);
+            return deviceData.RADIO;
+        };
+    } catch (err) {
+        logDebug("Build radio hook unavailable: " + err.message);
+    }
+
+    logSuccess("Device Settings hooked");
 }
 
 /* ========== SECURE SETTINGS SPOOFING ========== */
 
-function spoofSecureSettings() {
+function spoofSecureSettings(deviceData, spoofProfile) {
     logInfo("Spoofing Secure Settings (android_id)...");
 
     try {
         var SettingsSecure = Java.use("android.provider.Settings$Secure");
-        var android_id = _randomHex(16);
+        var android_id = spoofProfile.androidId;
+        var secureSpoofMap = {
+            "android_id": android_id
+        };
+
+        if (deviceData) {
+            var spoofedDeviceName = spoofProfile.deviceName;
+            secureSpoofMap.device_name = spoofedDeviceName;
+            secureSpoofMap.bluetooth_name = spoofedDeviceName;
+            secureSpoofMap.wifi_p2p_device_name = spoofedDeviceName;
+        }
 
         SettingsSecure.getString.overload("android.content.ContentResolver", "java.lang.String").implementation = function(resolver, name) {
-            if (name === "android_id") {
-                logDebug("android_id -> " + android_id);
-                return android_id;
+            if (secureSpoofMap[name] !== undefined) {
+                logDebug(name + " -> " + secureSpoofMap[name]);
+                return secureSpoofMap[name];
             }
             return this.getString(resolver, name);
         };
+
+        try {
+            SettingsSecure.getStringForUser.overload("android.content.ContentResolver", "java.lang.String", "int").implementation = function(resolver, name, userHandle) {
+                if (secureSpoofMap[name] !== undefined) {
+                    logDebug("Secure.getStringForUser(" + name + ") -> " + secureSpoofMap[name]);
+                    return secureSpoofMap[name];
+                }
+                return this.getStringForUser(resolver, name, userHandle);
+            };
+        } catch (e) {
+            logDebug("Secure.getStringForUser hook skipped: " + e.message);
+        }
 
         logSuccess("Secure settings spoofed");
 
@@ -344,14 +545,13 @@ function spoofSecureSettings() {
 
 /* ========== TELEPHONY SPOOFING ========== */
 
-function spoofTelephony() {
+function spoofTelephony(spoofProfile) {
     logInfo("Spoofing Telephony (IMEI, IMSI, etc)...");
 
-    var android_id = _randomHex(16);
-    var phone = _randomPaddedInt(10);
-    var imei = _randomPaddedInt(14) + _luhn_getcheck(_randomPaddedInt(14));
-    var imsi = _randomPaddedInt(15);
-    var iccid = "89" + _randomPaddedInt(16) + _luhn_getcheck("89" + _randomPaddedInt(16));
+    var phone = spoofProfile.phone;
+    var imei = spoofProfile.imei;
+    var imsi = spoofProfile.imsi;
+    var iccid = spoofProfile.iccid;
 
     logSuccess("Telephony IDs: IMEI=" + imei + ", IMSI=" + imsi);
 
@@ -395,16 +595,13 @@ function spoofTelephony() {
 
 /* ========== MAC ADDRESS SPOOFING ========== */
 
-function spoofMACAddress() {
+function spoofMACAddress(spoofProfile) {
     logInfo("Spoofing MAC address...");
 
-    var mac = [];
-    for (var i = 0; i < 6; i++) {
-        mac.push(_randomInt(0, 255));
-    }
-    var mac_str = mac.map(function(x) { return _pad(x.toString(16), 2); }).join(":");
+    var mac = spoofProfile.macBytes;
+    var mac_str = spoofProfile.macString;
 
-    logSuccess("MAC Address: " + mac_str.toUpperCase());
+    logSuccess("MAC Address: " + mac_str);
 
     try {
         var NetworkInterface = Java.use("java.net.NetworkInterface");
@@ -449,20 +646,20 @@ function hideGSFID() {
 
 /* ========== ADVERTISING ID SPOOFING ========== */
 
-function spoofAdvertisingId() {
+function spoofAdvertisingId(spoofProfile) {
     logInfo("Spoofing Advertising ID...");
 
     try {
         var AdvertisingIdClient = Java.use("com.google.android.gms.ads.identifier.AdvertisingIdClient");
         var Info = Java.use("com.google.android.gms.ads.identifier.AdvertisingIdClient$Info");
+        var adid = spoofProfile.advertisingId;
 
         AdvertisingIdClient.getAdvertisingIdInfo.overload("android.content.Context").implementation = function(context) {
-            var adid = _randomHex(32);
-            logSuccess("Advertising ID: " + adid);
+            logDebug("Advertising ID -> " + adid);
             return Info.$new(adid, false);
         };
 
-        logSuccess("Advertising ID spoofed");
+        logSuccess("Advertising ID spoofed: " + adid);
     } catch (err) {
         logDebug("Advertising ID (GMS not available): " + err.message);
     }
@@ -470,12 +667,12 @@ function spoofAdvertisingId() {
 
 /* ========== BOOT TIMESTAMP SPOOFING ========== */
 
-function spoofBootTimestamps() {
+function spoofBootTimestamps(spoofProfile) {
     logInfo("Spoofing boot timestamps (first setup)...");
 
     try {
         var System = Java.use("java.lang.System");
-        var firstBootTime = Date.now() - _randomInt(3600000, 604800000);
+        var firstBootTime = spoofProfile.bootTime;
 
         // Spoof via system property
         var Build = Java.use("android.os.Build");
@@ -499,7 +696,7 @@ function spoofBootTimestamps() {
 
 /* ========== PACKAGE MANAGER SPOOFING (NEW) ========== */
 
-function spoofPackageManager() {
+function spoofPackageManager(spoofProfile) {
     logInfo("Spoofing Package Manager (installation dates)...");
 
     try {
@@ -511,9 +708,8 @@ function spoofPackageManager() {
 
             // Spoof first install time to appear as pre-installed
             try {
-                var firstInstallTime = Date.now() - _randomInt(86400000, 604800000);
-                info.firstInstallTime = firstInstallTime;
-                info.lastUpdateTime = Date.now();
+                info.firstInstallTime = spoofProfile.firstInstallTime;
+                info.lastUpdateTime = spoofProfile.lastUpdateTime;
             } catch(e) {}
 
             return info;
@@ -633,40 +829,41 @@ Java.perform(function () {
     try {
         var randomDevice = _getRandomDevice();
         var deviceData = randomDevice.data;
+        var spoofProfile = createSpoofProfile(deviceData);
 
         console.log("\x1b[1m\x1b[33m[DEVICE SELECTED]\x1b[0m " + randomDevice.brand.toUpperCase() + " > " + randomDevice.model + "\n");
 
         hookDynamicReceiverFlags();
         console.log("");
 
-        deepSpoofBuildProperties(deviceData);
+        deepSpoofBuildProperties(deviceData, spoofProfile);
         console.log("");
 
         spoofBuildVersion(deviceData);
         console.log("");
 
-        hookExtendedSystemProperties(deviceData);
+        hookExtendedSystemProperties(deviceData, spoofProfile);
         console.log("");
 
-        hookDeviceSettings(deviceData);
+        hookDeviceSettings(deviceData, spoofProfile);
         console.log("");
 
-        spoofSecureSettings();
+        spoofSecureSettings(deviceData, spoofProfile);
         console.log("");
 
-        spoofTelephony();
+        spoofTelephony(spoofProfile);
         console.log("");
 
-        spoofMACAddress();
+        spoofMACAddress(spoofProfile);
         console.log("");
 
-        spoofBootTimestamps();
+        spoofBootTimestamps(spoofProfile);
         console.log("");
 
-        spoofAdvertisingId();
+        spoofAdvertisingId(spoofProfile);
         console.log("");
 
-        spoofPackageManager();
+        spoofPackageManager(spoofProfile);
         console.log("");
 
         createNewDeviceMarker();
