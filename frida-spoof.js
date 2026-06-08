@@ -247,6 +247,7 @@ function hookExtendedSystemProperties(deviceData, spoofProfile) {
             // Security Properties
             "ro.secure": "1",
             "ro.debuggable": "0",
+            "service.adb.root": "0",
             "ro.boot.verifiedbootstate": "green",
             "ro.boot.flash.locked": "1",
 
@@ -1734,6 +1735,819 @@ function hookDynamicReceiverFlags() {
     logSuccess("Dynamic BroadcastReceiver flags hooked");
 }
 
+/* ========== ANTI-DEBUGGING BYPASS ========== */
+function setupAntiDebuggingBypass() {
+    logInfo("Setting up Anti-Debugging Bypass...");
+
+    // Debug.isDebuggerConnected() bypass
+    try {
+        var Debug = Java.use("android.os.Debug");
+        Debug.isDebuggerConnected.implementation = function() {
+            logDebug("Debug.isDebuggerConnected() bypassed");
+            return false;
+        };
+        logSuccess("Debug.isDebuggerConnected() hooked");
+    } catch (e) {
+        logError("Debug.isDebuggerConnected() hook failed: " + e);
+    }
+
+    // ApplicationInfo.FLAG_DEBUGGABLE bypass
+    try {
+        var ApplicationInfo = Java.use("android.content.pm.ApplicationInfo");
+        ApplicationInfo.FLAG_DEBUGGABLE.value = 0;
+        logSuccess("ApplicationInfo.FLAG_DEBUGGABLE bypassed");
+    } catch (e) {
+        logError("ApplicationInfo.FLAG_DEBUGGABLE bypass failed: " + e);
+    }
+
+    // Bypass native anti-debugging checks
+    var nativeFunctions = [
+        "ptrace",
+        "fork",
+        "strstr",
+        "strcmp"
+    ];
+
+    nativeFunctions.forEach(function(funcName) {
+        try {
+            var funcPtr = Module.findExportByName("libc.so", funcName);
+            if (funcPtr && !funcPtr.isNull()) {
+                Interceptor.attach(funcPtr, {
+                    onEnter: function(args) {
+                        if (funcName === "ptrace") {
+                            logDebug("ptrace() called - bypassing");
+                            args[0] = ptr(0); // PTRACE_TRACEME = 0
+                        } else if (funcName === "strstr") {
+                            var haystack = Memory.readUtf8String(args[0]);
+                            var needle = Memory.readUtf8String(args[1]);
+
+                            var debugStrings = [
+                                "TracerPid",
+                                "gdb",
+                                "frida",
+                                "xposed"
+                            ];
+
+                            debugStrings.forEach(function(debugStr) {
+                                if (needle && needle.includes(debugStr)) {
+                                    logDebug("strstr() bypassed for: " + needle);
+                                    args[1] = Memory.allocUtf8String("non_existent_string");
+                                }
+                            });
+                        } else if (funcName === "strcmp") {
+                            var str1 = Memory.readUtf8String(args[0]);
+                            var str2 = Memory.readUtf8String(args[1]);
+
+                            if ((str1 && str1.includes("TracerPid")) ||
+                                (str2 && str2.includes("TracerPid"))) {
+                                logDebug("strcmp() bypassed for TracerPid");
+                                this.bypass = true;
+                            }
+                        }
+                    },
+                    onLeave: function(retval) {
+                        if (this.bypass) {
+                            retval.replace(1); // Make strings not equal
+                            this.bypass = false;
+                        }
+                    }
+                });
+                logSuccess(funcName + " hooked");
+            }
+        } catch (e) {
+            logError(funcName + " hook failed: " + e);
+        }
+    });
+
+    // Bypass timing-based detection
+    try {
+        var System = Java.use("java.lang.System");
+        var originalNanoTime = System.nanoTime;
+        var originalCurrentTimeMillis = System.currentTimeMillis;
+
+        System.nanoTime.implementation = function() {
+            var result = originalNanoTime.call(this);
+            // Modify timing to avoid detection patterns
+            return result;
+        };
+
+        System.currentTimeMillis.implementation = function() {
+            var result = originalCurrentTimeMillis.call(this);
+            // Modify timing to avoid detection patterns
+            return result;
+        };
+
+        logSuccess("Timing functions hooked");
+    } catch (e) {
+        logError("Timing bypass failed: " + e);
+    }
+
+    // Bypass process name checks
+    try {
+        var ActivityThread = Java.use("android.app.ActivityThread");
+        ActivityThread.getProcessName.implementation = function() {
+            var processName = this.getProcessName();
+            logDebug("Process name requested: " + processName);
+            return processName;
+        };
+        logSuccess("ActivityThread.getProcessName() hooked");
+    } catch (e) {
+        logError("ActivityThread.getProcessName() hook failed: " + e);
+    }
+
+    // Bypass exception-based debugging detection
+    try {
+        var Thread = Java.use("java.lang.Thread");
+        Thread.getStackTrace.implementation = function() {
+            var stack = this.getStackTrace();
+            logDebug("Stack trace requested");
+            return stack;
+        };
+        logSuccess("Thread.getStackTrace() hooked");
+    } catch (e) {
+        logError("Thread.getStackTrace() hook failed: " + e);
+    }
+
+    logSuccess("Android Anti-Debugging Bypass setup complete!");
+}
+
+/* ========== CRYPTO MONITOR ========== */
+function setupCryptoMonitor() {
+    logInfo("Setting up Crypto Monitor...");
+
+    // Monitor Cipher operations
+    try {
+        var Cipher = Java.use("javax.crypto.Cipher");
+
+        // Hook Cipher.getInstance()
+        Cipher.getInstance.overload("java.lang.String").implementation = function(transformation) {
+            logDebug("Cipher.getInstance() called with transformation: " + transformation);
+
+            // Check for weak algorithms
+            var weakAlgos = ["DES", "3DES", "RC4", "MD5"];
+            weakAlgos.forEach(function(algo) {
+                if (transformation.toUpperCase().includes(algo)) {
+                    logWarn("WEAK ALGORITHM DETECTED: " + transformation);
+                }
+            });
+
+            return this.getInstance(transformation);
+        };
+
+        // Hook init() methods
+        Cipher.init.overload("int", "java.security.Key").implementation = function(opmode, key) {
+            var mode = "";
+            switch(opmode) {
+                case 1: mode = "ENCRYPT_MODE"; break;
+                case 2: mode = "DECRYPT_MODE"; break;
+                case 3: mode = "WRAP_MODE"; break;
+                case 4: mode = "UNWRAP_MODE"; break;
+            }
+
+            logDebug("Cipher.init() called with mode: " + mode + ", Key algorithm: " + key.getAlgorithm() + ", Key format: " + key.getFormat());
+
+            return this.init(opmode, key);
+        };
+
+        // Hook doFinal() for data inspection
+        Cipher.doFinal.overload("[B").implementation = function(input) {
+            logDebug("Cipher.doFinal() called. Input length: " + input.length + " bytes");
+
+            // Log first few bytes (be careful with sensitive data)
+            if (input.length > 0) {
+                var preview = "";
+                for (var i = 0; i < Math.min(input.length, 16); i++) {
+                    preview += ("0" + (input[i] & 0xFF).toString(16)).slice(-2) + " ";
+                }
+                logDebug("Input preview: " + preview);
+            }
+
+            var result = this.doFinal(input);
+            logDebug("Output length: " + result.length + " bytes");
+
+            return result;
+        };
+
+        logSuccess("Cipher hooks installed");
+    } catch (e) {
+        logError("Cipher hook failed: " + e);
+    }
+
+    // Monitor MessageDigest (Hash) operations
+    try {
+        var MessageDigest = Java.use("java.security.MessageDigest");
+
+        MessageDigest.getInstance.overload("java.lang.String").implementation = function(algorithm) {
+            logDebug("MessageDigest.getInstance() called with: " + algorithm);
+
+            // Check for weak hash algorithms
+            var weakHashes = ["MD5", "SHA1"];
+            if (weakHashes.includes(algorithm.toUpperCase())) {
+                logWarn("WEAK HASH ALGORITHM DETECTED: " + algorithm);
+            }
+
+            return this.getInstance(algorithm);
+        };
+
+        MessageDigest.digest.overload("[B").implementation = function(input) {
+            logDebug("MessageDigest.digest() called. Input length: " + input.length + " bytes");
+
+            var result = this.digest(input);
+            logDebug("Hash length: " + result.length + " bytes");
+
+            return result;
+        };
+
+        logSuccess("MessageDigest hooks installed");
+    } catch (e) {
+        logError("MessageDigest hook failed: " + e);
+    }
+
+    // Monitor KeyGenerator operations
+    try {
+        var KeyGenerator = Java.use("javax.crypto.KeyGenerator");
+
+        KeyGenerator.getInstance.overload("java.lang.String").implementation = function(algorithm) {
+            logDebug("KeyGenerator.getInstance() called with: " + algorithm);
+            return this.getInstance(algorithm);
+        };
+
+        KeyGenerator.generateKey.implementation = function() {
+            logDebug("KeyGenerator.generateKey() called");
+            var key = this.generateKey();
+            logDebug("Generated key algorithm: " + key.getAlgorithm() + ", Generated key format: " + key.getFormat());
+            return key;
+        };
+
+        logSuccess("KeyGenerator hooks installed");
+    } catch (e) {
+        logError("KeyGenerator hook failed: " + e);
+    }
+
+    // Monitor SecureRandom operations
+    try {
+        var SecureRandom = Java.use("java.security.SecureRandom");
+
+        SecureRandom.getInstance.overload("java.lang.String").implementation = function(algorithm) {
+            logDebug("SecureRandom.getInstance() called with: " + algorithm);
+
+            // Check for weak PRNG
+            if (algorithm === "SHA1PRNG") {
+                logWarn("WEAK PRNG DETECTED: SHA1PRNG");
+            }
+
+            return this.getInstance(algorithm);
+        };
+
+        SecureRandom.nextBytes.implementation = function(bytes) {
+            logDebug("SecureRandom.nextBytes() called for " + bytes.length + " bytes");
+            return this.nextBytes(bytes);
+        };
+
+        logSuccess("SecureRandom hooks installed");
+    } catch (e) {
+        logError("SecureRandom hook failed: " + e);
+    }
+
+    // Monitor Base64 encoding/decoding
+    try {
+        var Base64 = Java.use("android.util.Base64");
+
+        Base64.encode.overload("[B", "int").implementation = function(input, flags) {
+            logDebug("Base64.encode() called. Input length: " + input.length + " bytes");
+
+            var result = this.encode(input, flags);
+            logDebug("Encoded length: " + result.length + " bytes");
+
+            return result;
+        };
+
+        Base64.decode.overload("java.lang.String", "int").implementation = function(str, flags) {
+            logDebug("Base64.decode() called. Input: " + str.substring(0, Math.min(str.length, 50)) + "...");
+
+            var result = this.decode(str, flags);
+            logDebug("Decoded length: " + result.length + " bytes");
+
+            return result;
+        };
+
+        logSuccess("Base64 hooks installed");
+    } catch (e) {
+        logError("Base64 hook failed: " + e);
+    }
+
+    // Monitor URL encoding/decoding
+    try {
+        var URLEncoder = Java.use("java.net.URLEncoder");
+        var URLDecoder = Java.use("java.net.URLDecoder");
+
+        URLEncoder.encode.overload("java.lang.String", "java.lang.String").implementation = function(s, enc) {
+            logDebug("URLEncoder.encode() called. Input: " + s.substring(0, Math.min(s.length, 100)));
+            var result = this.encode(s, enc);
+            return result;
+        };
+
+        URLDecoder.decode.overload("java.lang.String", "java.lang.String").implementation = function(s, enc) {
+            logDebug("URLDecoder.decode() called. Input: " + s.substring(0, Math.min(s.length, 100)));
+            var result = this.decode(s, enc);
+            return result;
+        };
+
+        logSuccess("URL encoding hooks installed");
+    } catch (e) {
+        logError("URL encoding hook failed: " + e);
+    }
+
+    // Monitor key storage in KeyStore
+    try {
+        var KeyStore = Java.use("java.security.KeyStore");
+
+        KeyStore.getKey.implementation = function(alias, password) {
+            logDebug("KeyStore.getKey() called for alias: " + alias);
+
+            var key = this.getKey(alias, password);
+            if (key) {
+                logDebug("Retrieved key algorithm: " + key.getAlgorithm());
+            }
+
+            return key;
+        };
+
+        KeyStore.setKeyEntry.overload("java.lang.String", "java.security.Key", "[C", "[Ljava.security.cert.Certificate;").implementation = function(alias, key, password, chain) {
+            logDebug("KeyStore.setKeyEntry() called. Alias: " + alias + ", Key algorithm: " + key.getAlgorithm());
+            return this.setKeyEntry(alias, key, password, chain);
+        };
+
+        logSuccess("KeyStore hooks installed");
+    } catch (e) {
+        logError("KeyStore hook failed: " + e);
+    }
+
+    logSuccess("Android Crypto Hook setup complete!");
+}
+
+/* ========== NETWORK MONITOR ========== */
+function setupNetworkMonitor() {
+    logInfo("Setting up Network Monitor...");
+
+    // Monitor HttpURLConnection
+    try {
+        var HttpURLConnection = Java.use("java.net.HttpURLConnection");
+
+        // Hook connect method
+        HttpURLConnection.connect.implementation = function() {
+            var url = this.getURL().toString();
+            var method = this.getRequestMethod();
+
+            logDebug("HttpURLConnection.connect() - URL: " + url + ", Method: " + method);
+
+            // Check for HTTP (insecure)
+            if (url.startsWith("http://")) {
+                logWarn("INSECURE HTTP CONNECTION DETECTED: " + url);
+            }
+
+            return this.connect();
+        };
+
+        // Hook getInputStream for response monitoring
+        HttpURLConnection.getInputStream.implementation = function() {
+            logDebug("HttpURLConnection.getInputStream() - Response code: " + this.getResponseCode() + ", Content type: " + this.getContentType());
+            return this.getInputStream();
+        };
+
+        logSuccess("HttpURLConnection hooks installed");
+    } catch (e) {
+        logError("HttpURLConnection hook failed: " + e);
+    }
+
+    // Monitor OkHttp3 (popular HTTP client)
+    try {
+        var OkHttpClient = Java.use("okhttp3.OkHttpClient");
+        var Request = Java.use("okhttp3.Request");
+
+        // Hook newCall method
+        OkHttpClient.newCall.implementation = function(request) {
+            logDebug("OkHttpClient.newCall() - URL: " + request.url().toString() + ", Method: " + request.method());
+
+            // Log headers
+            var headers = request.headers();
+            var headerNames = headers.names();
+            var headerIterator = headerNames.iterator();
+
+            while (headerIterator.hasNext()) {
+                var headerName = headerIterator.next();
+                var headerValue = headers.get(headerName);
+                logDebug("OkHttp Header - " + headerName + ": " + headerValue);
+
+                // Check for sensitive headers
+                if (headerName.toLowerCase().includes("authorization") ||
+                    headerName.toLowerCase().includes("token") ||
+                    headerName.toLowerCase().includes("key")) {
+                    logWarn("SENSITIVE HEADER DETECTED: " + headerName);
+                }
+            }
+
+            return this.newCall(request);
+        };
+
+        logSuccess("OkHttpClient hooks installed");
+    } catch (e) {
+        logError("OkHttpClient hook failed: " + e);
+    }
+
+    // Monitor Volley requests
+    try {
+        var Request = Java.use("com.android.volley.Request");
+
+        Request.getUrl.implementation = function() {
+            var url = this.getUrl();
+            logDebug("Volley Request URL: " + url);
+
+            if (url.startsWith("http://")) {
+                logWarn("INSECURE VOLLEY REQUEST: " + url);
+            }
+
+            return url;
+        };
+
+        logSuccess("Volley Request hooks installed");
+    } catch (e) {
+        logError("Volley Request hook failed: " + e);
+    }
+
+    // Monitor Retrofit (if present)
+    try {
+        var Retrofit = Java.use("retrofit2.Retrofit");
+
+        Retrofit.baseUrl.implementation = function() {
+            var baseUrl = this.baseUrl();
+            logDebug("Retrofit base URL: " + baseUrl.toString());
+            return baseUrl;
+        };
+
+        logSuccess("Retrofit hooks installed");
+    } catch (e) {
+        logError("Retrofit hook failed: " + e);
+    }
+
+    // Monitor Socket connections
+    try {
+        var Socket = Java.use("java.net.Socket");
+
+        Socket.connect.overload("java.net.SocketAddress").implementation = function(endpoint) {
+            logDebug("Socket.connect() - Endpoint: " + endpoint.toString());
+            return this.connect(endpoint);
+        };
+
+        Socket.connect.overload("java.net.SocketAddress", "int").implementation = function(endpoint, timeout) {
+            logDebug("Socket.connect() with timeout - Endpoint: " + endpoint.toString() + ", Timeout: " + timeout + "ms");
+            return this.connect(endpoint, timeout);
+        };
+
+        logSuccess("Socket hooks installed");
+    } catch (e) {
+        logError("Socket hook failed: " + e);
+    }
+
+    // Monitor URL class usage
+    try {
+        var URL = Java.use("java.net.URL");
+
+        URL.$init.overload("java.lang.String").implementation = function(spec) {
+            logDebug("URL created: " + spec);
+
+            if (spec.startsWith("http://")) {
+                logWarn("INSECURE URL DETECTED: " + spec);
+            }
+
+            return this.$init(spec);
+        };
+
+        logSuccess("URL hooks installed");
+    } catch (e) {
+        logError("URL hook failed: " + e);
+    }
+
+    // Monitor DNS lookups
+    try {
+        var InetAddress = Java.use("java.net.InetAddress");
+
+        InetAddress.getByName.implementation = function(host) {
+            var result = this.getByName(host);
+            logDebug("DNS lookup for: " + host + " -> Resolved to: " + result.getHostAddress());
+            return result;
+        };
+
+        InetAddress.getAllByName.implementation = function(host) {
+            var results = this.getAllByName(host);
+            for (var i = 0; i < results.length; i++) {
+                logDebug("DNS lookup (all) for: " + host + " -> Resolved to: " + results[i].getHostAddress());
+            }
+            return results;
+        };
+
+        logSuccess("InetAddress hooks installed");
+    } catch (e) {
+        logError("InetAddress hook failed: " + e);
+    }
+
+    // Monitor WebView network activity
+    try {
+        var WebView = Java.use("android.webkit.WebView");
+
+        WebView.loadUrl.overload("java.lang.String").implementation = function(url) {
+            logDebug("WebView.loadUrl(): " + url);
+
+            if (url.startsWith("http://")) {
+                logWarn("INSECURE WEBVIEW URL: " + url);
+            }
+
+            return this.loadUrl(url);
+        };
+
+        WebView.loadUrl.overload("java.lang.String", "java.util.Map").implementation = function(url, additionalHttpHeaders) {
+            logDebug("WebView.loadUrl() with headers: " + url);
+
+            if (additionalHttpHeaders) {
+                var keySet = additionalHttpHeaders.keySet();
+                var iterator = keySet.iterator();
+
+                while (iterator.hasNext()) {
+                    var key = iterator.next();
+                    var value = additionalHttpHeaders.get(key);
+                    logDebug("WebView Additional header - " + key + ": " + value);
+                }
+            }
+
+            return this.loadUrl(url, additionalHttpHeaders);
+        };
+
+        logSuccess("WebView hooks installed");
+    } catch (e) {
+        logError("WebView hook failed: " + e);
+    }
+
+    // Monitor JSON data (often used in API calls)
+    try {
+        var JSONObject = Java.use("org.json.JSONObject");
+
+        JSONObject.put.overload("java.lang.String", "java.lang.Object").implementation = function(name, value) {
+            // Log sensitive-looking JSON keys
+            var sensitiveKeys = ["password", "token", "secret", "key", "auth", "api_key", "access_token"];
+            var lowerName = name.toLowerCase();
+
+            sensitiveKeys.forEach(function(sensitiveKey) {
+                if (lowerName.includes(sensitiveKey)) {
+                    logWarn("SENSITIVE JSON KEY DETECTED: " + name + " = " + value);
+                }
+            });
+
+            return this.put(name, value);
+        };
+
+        logSuccess("JSONObject hooks installed");
+    } catch (e) {
+        logError("JSONObject hook failed: " + e);
+    }
+
+    // Monitor HTTP response reading
+    try {
+        var BufferedReader = Java.use("java.io.BufferedReader");
+
+        var originalReadLine = BufferedReader.readLine;
+        BufferedReader.readLine.implementation = function() {
+            var line = originalReadLine.call(this);
+
+            if (line != null && line.length > 0) {
+                // Look for sensitive data patterns in responses
+                var sensitivePatterns = [
+                    /token["\s]*[:=]["\s]*([a-zA-Z0-9_-]+)/gi,
+                    /key["\s]*[:=]["\s]*([a-zA-Z0-9_-]+)/gi,
+                    /password["\s]*[:=]["\s]*([^"]+)/gi,
+                    /secret["\s]*[:=]["\s]*([a-zA-Z0-9_-]+)/gi
+                ];
+
+                sensitivePatterns.forEach(function(pattern) {
+                    var matches = line.match(pattern);
+                    if (matches) {
+                        logWarn("SENSITIVE DATA IN RESPONSE: " + matches[0]);
+                    }
+                });
+            }
+
+            return line;
+        };
+
+        logSuccess("BufferedReader hooks installed");
+    } catch (e) {
+        logError("BufferedReader hook failed: " + e);
+    }
+
+    logSuccess("Android Network Monitor setup complete!");
+}
+
+/* ========== ROOT DETECTION BYPASS ========== */
+function setupRootDetectionBypass() {
+    logInfo("Setting up Root Detection Bypass...");
+
+    // RootBeer library bypass
+    try {
+        var RootBeer = Java.use("com.scottyab.rootbeer.RootBeer");
+        RootBeer.isRooted.implementation = function() {
+            logDebug("RootBeer.isRooted() bypassed");
+            return false;
+        };
+        RootBeer.isRootedWithoutBusyBoxCheck.implementation = function() {
+            logDebug("RootBeer.isRootedWithoutBusyBoxCheck() bypassed");
+            return false;
+        };
+        logSuccess("RootBeer library hooked");
+    } catch (e) {
+        logDebug("RootBeer library not found");
+    }
+
+    // Generic root detection bypass
+    var rootDetectionMethods = [
+        "isDeviceRooted",
+        "isRooted",
+        "checkRoot",
+        "detectRoot",
+        "isJailbroken",
+        "hasRoot",
+        "rootCheck",
+        "checkSU"
+    ];
+
+    // Hook common class names that might contain root detection
+    var rootDetectionClasses = [
+        "com.example.rootdetection",
+        "com.security.rootcheck",
+        "com.application.security",
+        "com.app.antiroot"
+    ];
+
+    // File-based root detection bypass
+    try {
+        var File = Java.use("java.io.File");
+        File.exists.implementation = function() {
+            var path = this.getAbsolutePath();
+            var suspicious_paths = [
+                "/system/app/Superuser.apk",
+                "/sbin/su",
+                "/system/bin/su",
+                "/system/xbin/su",
+                "/data/local/xbin/su",
+                "/data/local/bin/su",
+                "/system/sd/xbin/su",
+                "/system/bin/failsafe/su",
+                "/data/local/su",
+                "/su/bin/su",
+                "/system/xbin/busybox",
+                "/system/bin/busybox",
+                "/data/local/busybox",
+                "/data/local/xbin/busybox",
+                "/system/app/SuperSU",
+                "/system/app/SuperSU.apk",
+                "/system/app/Kinguser.apk",
+                "/data/data/eu.chainfire.supersu",
+                "/data/data/com.noshufou.android.su",
+                "/data/data/com.koushikdutta.superuser",
+                "/data/data/com.thirdparty.superuser",
+                "/data/data/com.yellowes.su",
+                "/data/data/com.kingroot.kinguser",
+                "/data/data/com.kingo.root",
+                "/data/data/com.smedialink.oneclickroot",
+                "/data/data/com.zhiqupk.root.global",
+                "/data/data/com.alephzain.framaroot"
+            ];
+
+            for (var i = 0; i < suspicious_paths.length; i++) {
+                if (path === suspicious_paths[i]) {
+                    logDebug("File.exists() bypassed for: " + path);
+                    return false;
+                }
+            }
+            return this.exists();
+        };
+        logSuccess("File.exists() hooked");
+    } catch (e) {
+        logError("File.exists() hook failed: " + e);
+    }
+
+    // Runtime.exec bypass
+    try {
+        var Runtime = Java.use("java.lang.Runtime");
+        Runtime.exec.overload("java.lang.String").implementation = function(command) {
+            var suspicious_commands = [
+                "su",
+                "which su",
+                "busybox",
+                "id"
+            ];
+
+            for (var i = 0; i < suspicious_commands.length; i++) {
+                if (command.includes(suspicious_commands[i])) {
+                    logDebug("Runtime.exec() bypassed for: " + command);
+                    throw new Error("Command blocked");
+                }
+            }
+            return this.exec(command);
+        };
+        logSuccess("Runtime.exec() hooked");
+    } catch (e) {
+        logError("Runtime.exec() hook failed: " + e);
+    }
+
+    // ProcessBuilder bypass
+    try {
+        var ProcessBuilder = Java.use("java.lang.ProcessBuilder");
+        ProcessBuilder.start.implementation = function() {
+            var commands = this.command();
+            var command_str = commands.toString();
+
+            if (command_str.includes("su") || command_str.includes("busybox")) {
+                logDebug("ProcessBuilder.start() bypassed for: " + command_str);
+                throw new Error("Process blocked");
+            }
+            return this.start();
+        };
+        logSuccess("ProcessBuilder.start() hooked");
+    } catch (e) {
+        logError("ProcessBuilder.start() hook failed: " + e);
+    }
+
+    // Package manager bypass
+    try {
+        var PackageManager = Java.use("android.app.ApplicationPackageManager");
+        PackageManager.getInstalledPackages.implementation = function(flags) {
+            var packages = this.getInstalledPackages(flags);
+            var filtered_packages = [];
+
+            var suspicious_packages = [
+                "com.noshufou.android.su",
+                "com.noshufou.android.su.elite",
+                "eu.chainfire.supersu",
+                "com.koushikdutta.superuser",
+                "com.thirdparty.superuser",
+                "com.yellowes.su",
+                "com.topjohnwu.magisk",
+                "com.kingroot.kinguser",
+                "com.kingo.root",
+                "com.smedialink.oneclickroot",
+                "com.zhiqupk.root.global",
+                "com.alephzain.framaroot"
+            ];
+
+            for (var i = 0; i < packages.size(); i++) {
+                var package_info = packages.get(i);
+                var package_name = package_info.packageName.value;
+
+                var is_suspicious = false;
+                for (var j = 0; j < suspicious_packages.length; j++) {
+                    if (package_name === suspicious_packages[j]) {
+                        logDebug("Hidden suspicious package: " + package_name);
+                        is_suspicious = true;
+                        break;
+                    }
+                }
+
+                if (!is_suspicious) {
+                    filtered_packages.push(package_info);
+                }
+            }
+
+            var ArrayList = Java.use("java.util.ArrayList");
+            var filtered_list = ArrayList.$new();
+            for (var k = 0; k < filtered_packages.length; k++) {
+                filtered_list.add(filtered_packages[k]);
+            }
+
+            return filtered_list;
+        };
+        logSuccess("PackageManager.getInstalledPackages() hooked");
+    } catch (e) {
+        logError("PackageManager.getInstalledPackages() hook failed: " + e);
+    }
+
+    // Native library check bypass
+    try {
+        var System = Java.use("java.lang.System");
+        System.loadLibrary.implementation = function(library) {
+            logDebug("System.loadLibrary() called for: " + library);
+            try {
+                return this.loadLibrary(library);
+            } catch (e) {
+                logDebug("Library load failed, continuing: " + e);
+            }
+        };
+        logSuccess("System.loadLibrary() hooked");
+    } catch (e) {
+        logError("System.loadLibrary() hook failed: " + e);
+    }
+
+    logSuccess("Android Root Detection Bypass setup complete!");
+}
+
 /* ========== MAIN EXECUTION ========== */
 
 Java.perform(function () {
@@ -1812,12 +2626,26 @@ Java.perform(function () {
         spoofPackageManager(spoofProfile);
         console.log("");
 
+
+        console.log("");
+
         createNewDeviceMarker();
         console.log("");
 
         hideGSFID();
         console.log("");
 
+        setupAntiDebuggingBypass();
+        console.log("");
+
+        setupCryptoMonitor();
+        console.log("");
+
+        setupNetworkMonitor();
+        console.log("");
+
+        setupRootDetectionBypass();
+        console.log("");
         console.log("\x1b[1m\x1b[32m╔════════════════════════════════════════════════════════════════╗\x1b[0m");
         console.log("\x1b[1m\x1b[32m║    ✓✓✓ REAL NEW DEVICE HOOKS INSTALLED SUCCESSFULLY ✓✓✓      ║\x1b[0m");
         console.log("\x1b[1m\x1b[32m║                                                                ║\x1b[0m");
