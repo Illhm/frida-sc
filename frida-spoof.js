@@ -2319,13 +2319,14 @@ function setupRootDetectionBypass() {
     // Native library check bypass
     try {
         var System = Java.use("java.lang.System");
+        var originalLoadLibrary = System.loadLibrary;
         System.loadLibrary.implementation = function(library) {
             logDebug("System.loadLibrary() called for: " + library);
             try {
-                return this.loadLibrary(library);
+                return originalLoadLibrary.call(System, library);
             } catch (e) {
                 logDebug("Library load failed, continuing: " + e);
-                throw e; // Rethrow to allow the app to handle missing libraries
+                throw e;
             }
         };
         logSuccess("System.loadLibrary() hooked");
