@@ -2375,7 +2375,15 @@ function setupRootDetectionBypass() {
                 "/data/data/com.kingo.root",
                 "/data/data/com.smedialink.oneclickroot",
                 "/data/data/com.zhiqupk.root.global",
-                "/data/data/com.alephzain.framaroot"
+                "/data/data/com.alephzain.framaroot",
+                "/sbin/magisk",
+                "/sbin/magiskinit",
+                "/system/bin/magisk",
+                "/data/adb/magisk",
+                "/data/adb/modules",
+                "/data/adb/zygisk",
+                "/data/adb/shamiko",
+                "/data/adb/tricky_store"
             ];
 
             for (var i = 0; i < suspicious_paths.length; i++) {
@@ -2483,7 +2491,11 @@ function setupRootDetectionBypass() {
                 "com.kingo.root",
                 "com.smedialink.oneclickroot",
                 "com.zhiqupk.root.global",
-                "com.alephzain.framaroot"
+                "com.alephzain.framaroot",
+                "com.termux",
+                "com.oasisfeng.island",
+                "io.github.maytinhdibo.pocket",
+                "bin.mt.plus.canary:cmd"
             ];
 
             for (var i = 0; i < packages.size(); i++) {
