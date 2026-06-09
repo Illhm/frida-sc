@@ -12,23 +12,22 @@ var CONFIG = {
     ENABLE_BUILD_SPOOFING: true,
     ENABLE_BUILD_VERSION_SPOOFING: true,
     ENABLE_JAVA_SYSTEM_PROPERTIES: true,
-    ENABLE_NETWORK_MONITOR: false,
-    ENABLE_PACKAGE_MANAGER_SPOOF: false,
-    ENABLE_WEBVIEW_UA_SPOOF: false,
+    ENABLE_NETWORK_MONITOR: false, // Keep false to reduce log noise
+    ENABLE_PACKAGE_MANAGER_SPOOF: true,
+    ENABLE_WEBVIEW_UA_SPOOF: true,
     ENABLE_TELEPHONY_SPOOF: true,
-    ENABLE_NETWORK_INFO_SPOOF: false,
+    ENABLE_NETWORK_INFO_SPOOF: true,
     ENABLE_PLAY_SERVICES_SPOOF: true,
     ENABLE_ADVERTISING_ID_SPOOF: true,
     ENABLE_APPSFLYER_SPOOF: true,
     ENABLE_INSTALL_REFERRER_SPOOF: true,
 
-    // TURNED OFF TO DEBUG TRAFFIC VERIFICATION:
-    ENABLE_ROOT_BYPASS: false,
-    ENABLE_ANTI_DEBUG: false,
-    ENABLE_NATIVE_SYSTEM_PROPERTIES: false,
-    ENABLE_RESET_SESSION: false,
-    ENABLE_HIDE_GSF: false,
-    ENABLE_SSL_BYPASS: false,
+    ENABLE_ROOT_BYPASS: true,
+    ENABLE_ANTI_DEBUG: true,
+    ENABLE_NATIVE_SYSTEM_PROPERTIES: true,
+    ENABLE_RESET_SESSION: true,
+    ENABLE_HIDE_GSF: true,
+    ENABLE_SSL_BYPASS: false, // Keep SSL bypass OFF for now to allow Shopee to communicate normally
 
     // Other smaller features
     ENABLE_LOCALE_TIMEZONE_SPOOF: true,
@@ -174,6 +173,25 @@ function getTimestamp() {
 /* ========== DEVICE DATABASE EXTENDED ========== */
 
 var DEVICE_DATABASE = {
+    "google": {
+        "pixel_9_pro_xl":
+    "google": {
+        "pixel_9_pro_xl": { DEVICE: "komodo", PRODUCT: "komodo", MODEL: "Pixel 9 Pro XL", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/komodo/komodo:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "komodo", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "komodo", BOOTLOADER: "komodo-1.0-12821422", RADIO: "g5400p-145620-250311-B-12999434", DEVICE_NAME: "Pixel 9 Pro XL", DEVICE_FULL_NAME: "Pixel 9 Pro XL", PRODUCT_NAME: "komodo", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "35", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_9_pro": { DEVICE: "caiman", PRODUCT: "caiman", MODEL: "Pixel 9 Pro", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/caiman/caiman:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "caiman", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "caiman", BOOTLOADER: "caiman-1.0-12821422", RADIO: "g5400p-145620-250311-B-12999434", DEVICE_NAME: "Pixel 9 Pro", DEVICE_FULL_NAME: "Pixel 9 Pro", PRODUCT_NAME: "caiman", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "35", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_9": { DEVICE: "tokay", PRODUCT: "tokay", MODEL: "Pixel 9", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/tokay/tokay:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "tokay", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "tokay", BOOTLOADER: "tokay-1.0-12821422", RADIO: "g5400p-145620-250311-B-12999434", DEVICE_NAME: "Pixel 9", DEVICE_FULL_NAME: "Pixel 9", PRODUCT_NAME: "tokay", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "35", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_9_pro_fold": { DEVICE: "comet", PRODUCT: "comet", MODEL: "Pixel 9 Pro Fold", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/comet/comet:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "comet", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "comet", BOOTLOADER: "comet-1.0-12821422", RADIO: "g5400p-145620-250311-B-12999434", DEVICE_NAME: "Pixel 9 Pro Fold", DEVICE_FULL_NAME: "Pixel 9 Pro Fold", PRODUCT_NAME: "comet", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "35", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_8_pro": { DEVICE: "husky", PRODUCT: "husky", MODEL: "Pixel 8 Pro", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/husky/husky:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "husky", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "husky", BOOTLOADER: "husky-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 8 Pro", DEVICE_FULL_NAME: "Pixel 8 Pro", PRODUCT_NAME: "husky", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "34", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_8": { DEVICE: "shiba", PRODUCT: "shiba", MODEL: "Pixel 8", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/shiba/shiba:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "shiba", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "shiba", BOOTLOADER: "shiba-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 8", DEVICE_FULL_NAME: "Pixel 8", PRODUCT_NAME: "shiba", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "34", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_8a": { DEVICE: "akita", PRODUCT: "akita", MODEL: "Pixel 8a", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/akita/akita:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "akita", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "akita", BOOTLOADER: "akita-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 8a", DEVICE_FULL_NAME: "Pixel 8a", PRODUCT_NAME: "akita", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "34", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_fold": { DEVICE: "felix", PRODUCT: "felix", MODEL: "Pixel Fold", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/felix/felix:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "felix", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "felix", BOOTLOADER: "felix-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel Fold", DEVICE_FULL_NAME: "Pixel Fold", PRODUCT_NAME: "felix", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "33", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_tablet": { DEVICE: "tangorpro", PRODUCT: "tangorpro", MODEL: "Pixel Tablet", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/tangorpro/tangorpro:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "tangorpro", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "tangorpro", BOOTLOADER: "tangorpro-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel Tablet", DEVICE_FULL_NAME: "Pixel Tablet", PRODUCT_NAME: "tangorpro", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "33", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_7_pro": { DEVICE: "cheetah", PRODUCT: "cheetah", MODEL: "Pixel 7 Pro", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/cheetah/cheetah:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "cheetah", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "cheetah", BOOTLOADER: "cheetah-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 7 Pro", DEVICE_FULL_NAME: "Pixel 7 Pro", PRODUCT_NAME: "cheetah", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "33", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_7": { DEVICE: "panther", PRODUCT: "panther", MODEL: "Pixel 7", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/panther/panther:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "panther", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "panther", BOOTLOADER: "panther-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 7", DEVICE_FULL_NAME: "Pixel 7", PRODUCT_NAME: "panther", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "33", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_7a": { DEVICE: "lynx", PRODUCT: "lynx", MODEL: "Pixel 7a", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/lynx/lynx:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "lynx", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "lynx", BOOTLOADER: "lynx-1.0-12821422", RADIO: "g5300g-250228-250311-B-12999434", DEVICE_NAME: "Pixel 7a", DEVICE_FULL_NAME: "Pixel 7a", PRODUCT_NAME: "lynx", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "33", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_6_pro": { DEVICE: "raven", PRODUCT: "raven", MODEL: "Pixel 6 Pro", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/raven/raven:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "raven", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "raven", BOOTLOADER: "raven-1.0-12821422", RADIO: "g5123b-123456-250311-B-12999434", DEVICE_NAME: "Pixel 6 Pro", DEVICE_FULL_NAME: "Pixel 6 Pro", PRODUCT_NAME: "raven", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "31", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_6": { DEVICE: "oriole", PRODUCT: "oriole", MODEL: "Pixel 6", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/oriole/oriole:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "oriole", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "oriole", BOOTLOADER: "oriole-1.0-12821422", RADIO: "g5123b-123456-250311-B-12999434", DEVICE_NAME: "Pixel 6", DEVICE_FULL_NAME: "Pixel 6", PRODUCT_NAME: "oriole", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "31", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" },
+        "pixel_6a": { DEVICE: "bluejay", PRODUCT: "bluejay", MODEL: "Pixel 6a", MANUFACTURER: "Google", BRAND: "google", FINGERPRINT: "google/bluejay/bluejay:16/BP2A.250605.031.A2/13010374:user/release-keys", HARDWARE: "bluejay", HOST: "ab", USER: "android-build", DISPLAY: "BP2A.250605.031.A2", ID: "BP2A.250605.031.A2", TAGS: "release-keys", TYPE: "user", BOARD: "bluejay", BOOTLOADER: "bluejay-1.0-12821422", RADIO: "g5123b-123456-250311-B-12999434", DEVICE_NAME: "Pixel 6a", DEVICE_FULL_NAME: "Pixel 6a", PRODUCT_NAME: "bluejay", SDK_INT: 36, RELEASE: "16", FIRST_API_LEVEL: "31", SECURITY_PATCH: "2026-06-05", VNDK_VERSION: "36", CPU_ABI: "arm64-v8a", CPU_ABI2: "", EGL: "mali" }
+    },
     "poco": {
         "f3_android16": {
             DEVICE: "alioth", PRODUCT: "alioth", MODEL: "M2012K11AG", MANUFACTURER: "Xiaomi",
@@ -190,12 +208,15 @@ var DEVICE_DATABASE = {
 };
 
 function _getRandomDevice() {
-    // Keep a single coherent POCO profile so Build.*, ro.build.*, and
-    // Build.VERSION all describe the same Android 16 device.
+    var brands = Object.keys(DEVICE_DATABASE);
+    var randomBrand = brands[_randomInt(0, brands.length - 1)];
+    var models = Object.keys(DEVICE_DATABASE[randomBrand]);
+    var randomModel = models[_randomInt(0, models.length - 1)];
+
     return {
-        data: DEVICE_DATABASE.poco.f3_android16,
-        brand: "poco",
-        model: "f3_android16"
+        data: DEVICE_DATABASE[randomBrand][randomModel],
+        brand: randomBrand,
+        model: randomModel
     };
 }
 
@@ -2846,11 +2867,6 @@ Java.perform(function () {
         if (CONFIG.ENABLE_NETWORK_MONITOR) { setupNetworkMonitor(); console.log(""); }
         if (CONFIG.ENABLE_ROOT_BYPASS) { setupRootDetectionBypass(); console.log(""); }
         if (CONFIG.ENABLE_SSL_BYPASS) { setupSSLPinningBypass(); console.log(""); }
-
-        hookTrafficVerifyLogger();
-        console.log("");
-        hookWebViewVerifyErrors();
-        console.log("");
 
         console.log("\x1b[1m\x1b[32m╔════════════════════════════════════════════════════════════════╗\x1b[0m");
         console.log("\x1b[1m\x1b[32m║    ✓✓✓ REAL NEW DEVICE HOOKS INSTALLED SUCCESSFULLY ✓✓✓      ║\x1b[0m");
