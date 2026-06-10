@@ -1493,14 +1493,18 @@ function hookNativeSystemProperties() {
             onLeave: function(retval) {
                 var key = NATIVE_PROPERTY_POINTERS[this.propInfo.toString()];
                 var spoofed = spoofedValueForKey(key);
-                if (spoofed !== undefined && this.valuePtr !== null) {
+                if (spoofed !== undefined && this.valuePtr !== null && !this.valuePtr.isNull()) {
                     var spoofedString = String(spoofed);
-                    if (this.namePtr !== null) {
-                        this.namePtr.writeUtf8String(key);
+                    try {
+                        if (this.namePtr !== null && !this.namePtr.isNull()) {
+                            this.namePtr.writeUtf8String(key);
+                        }
+                        this.valuePtr.writeUtf8String(spoofedString);
+                        retval.replace(spoofedString.length);
+                        logDebug("native __system_property_read(" + key + ") -> " + spoofedString);
+                    } catch (e) {
+                        logDebug("Failed to write spoofed property " + key + ": " + e);
                     }
-                    this.valuePtr.writeUtf8String(spoofedString);
-                    retval.replace(spoofedString.length);
-                    logDebug("native __system_property_read(" + key + ") -> " + spoofedString);
                 }
             }
         });
