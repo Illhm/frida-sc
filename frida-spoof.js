@@ -298,6 +298,103 @@ function createSpoofProfile(deviceData) {
 
 /* ========== EXTENDED SYSTEM PROPERTIES HOOKING ========== */
 
+function addGetpropRegexAliases(propertyMap, deviceData, serialNo) {
+    var aliases = {
+        "brand": deviceData.BRAND,
+        "model": deviceData.MODEL,
+        "manufacturer": deviceData.MANUFACTURER,
+        "product.name": deviceData.PRODUCT_NAME,
+        "board": deviceData.BOARD,
+        "hardware": deviceData.HARDWARE,
+        "platform": deviceData.BOARD,
+        "serialno": serialNo,
+        "build.id": deviceData.ID,
+        "version.release": deviceData.RELEASE,
+        "sdk": String(deviceData.SDK_INT),
+        "codename": "REL",
+        "device": deviceData.DEVICE
+    };
+
+    Object.keys(aliases).forEach(function(alias) {
+        propertyMap[alias] = String(aliases[alias]);
+    });
+}
+
+function getSpoofedGetpropRegexOutput() {
+    var orderedKeys = [
+        "ro.product.brand",
+        "ro.product.model",
+        "ro.product.manufacturer",
+        "ro.product.name",
+        "ro.board",
+        "ro.product.board",
+        "ro.hardware",
+        "ro.board.platform",
+        "ro.serialno",
+        "ro.boot.serialno",
+        "ro.build.id",
+        "ro.build.version.release",
+        "ro.build.version.sdk",
+        "ro.build.version.codename",
+        "ro.product.device"
+    ];
+
+    var lines = [];
+    for (var i = 0; i < orderedKeys.length; i++) {
+        var key = orderedKeys[i];
+        if (ACTIVE_PROPERTY_MAP[key] !== undefined) {
+            lines.push("[" + key + "]: [" + ACTIVE_PROPERTY_MAP[key] + "]");
+        }
+    }
+    return lines.join("\n") + "\n";
+}
+
+function commandContainsGetpropDeviceRegex(command) {
+    if (!command) {
+        return false;
+    }
+
+    var normalized = String(command).toLowerCase();
+    if (normalized.indexOf("getprop") === -1) {
+        return false;
+    }
+
+    var requestedTerms = [
+        "brand", "model", "manufacturer", "product.name", "board", "hardware",
+        "platform", "serialno", "build.id", "version.release", "sdk", "codename", "device"
+    ];
+    var hitCount = 0;
+    for (var i = 0; i < requestedTerms.length; i++) {
+        if (normalized.indexOf(requestedTerms[i]) !== -1) {
+            hitCount++;
+        }
+    }
+    return hitCount >= 3;
+}
+
+function buildSpoofedGetpropCommandArray() {
+    var output = getSpoofedGetpropRegexOutput()
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "'\\''");
+    return ["sh", "-c", "printf '%s' '" + output + "'"];
+}
+
+function commandListToString(commandList) {
+    var parts = [];
+    for (var i = 0; i < commandList.size(); i++) {
+        parts.push(String(commandList.get(i)));
+    }
+    return parts.join(" ");
+}
+
+function commandArrayToString(commandArray) {
+    var parts = [];
+    for (var i = 0; i < commandArray.length; i++) {
+        parts.push(String(commandArray[i]));
+    }
+    return parts.join(" ");
+}
+
 function hookExtendedSystemProperties(deviceData, spoofProfile) {
     logInfo("Hooking EXTENDED system properties (real new device)...");
 
@@ -324,11 +421,14 @@ function hookExtendedSystemProperties(deviceData, spoofProfile) {
             "ro.build.user": deviceData.USER,
             "ro.build.version.sdk": String(deviceData.SDK_INT),
             "ro.build.version.release": deviceData.RELEASE,
+            "ro.build.version.codename": "REL",
             "ro.build.version.security_patch": deviceData.SECURITY_PATCH,
 
             // Hardware Properties
             "ro.hardware": deviceData.HARDWARE,
             "ro.hardware.keystore": "msm8998",
+            "ro.board": deviceData.BOARD,
+            "ro.product.board": deviceData.BOARD,
             "ro.board.platform": deviceData.BOARD,
             "ro.bootloader": deviceData.BOOTLOADER,
             "ro.baseband": deviceData.RADIO,
@@ -412,6 +512,8 @@ function hookExtendedSystemProperties(deviceData, spoofProfile) {
         };
 
         ACTIVE_PROPERTY_MAP = propertyMap;
+        addGetpropRegexAliases(propertyMap, deviceData, serialNo);
+
 
         System.getProperty.overload("java.lang.String").implementation = function(key) {
             if (propertyMap[key] !== undefined) {
@@ -2460,6 +2562,12 @@ function setupRootDetectionBypass() {
     try {
         var Runtime = Java.use("java.lang.Runtime");
         Runtime.exec.overload("java.lang.String").implementation = function(command) {
+            if (commandContainsGetpropDeviceRegex(command)) {
+                var spoofCommand = buildSpoofedGetpropCommandArray();
+                logDebug("Runtime.exec() getprop regex spoofed for: " + command);
+                return this.exec(Java.array("java.lang.String", spoofCommand));
+            }
+
             var suspicious_commands = [
                 "su",
                 "which su",
@@ -2475,6 +2583,37 @@ function setupRootDetectionBypass() {
             }
             return this.exec(command);
         };
+
+        Runtime.exec.overload("[Ljava.lang.String;").implementation = function(command) {
+            var commandString = commandArrayToString(command);
+            if (commandContainsGetpropDeviceRegex(commandString)) {
+                var spoofCommand = buildSpoofedGetpropCommandArray();
+                logDebug("Runtime.exec(String[]) getprop regex spoofed for: " + commandString);
+                return this.exec(Java.array("java.lang.String", spoofCommand));
+            }
+            return this.exec(command);
+        };
+
+        Runtime.exec.overload("[Ljava.lang.String;", "[Ljava.lang.String;").implementation = function(command, envp) {
+            var commandString = commandArrayToString(command);
+            if (commandContainsGetpropDeviceRegex(commandString)) {
+                var spoofCommand = buildSpoofedGetpropCommandArray();
+                logDebug("Runtime.exec(String[], String[]) getprop regex spoofed for: " + commandString);
+                return this.exec(Java.array("java.lang.String", spoofCommand), envp);
+            }
+            return this.exec(command, envp);
+        };
+
+        Runtime.exec.overload("[Ljava.lang.String;", "[Ljava.lang.String;", "java.io.File").implementation = function(command, envp, dir) {
+            var commandString = commandArrayToString(command);
+            if (commandContainsGetpropDeviceRegex(commandString)) {
+                var spoofCommand = buildSpoofedGetpropCommandArray();
+                logDebug("Runtime.exec(String[], String[], File) getprop regex spoofed for: " + commandString);
+                return this.exec(Java.array("java.lang.String", spoofCommand), envp, dir);
+            }
+            return this.exec(command, envp, dir);
+        };
+
         logSuccess("Runtime.exec() hooked");
     } catch (e) {
         logError("Runtime.exec() hook failed: " + e);
@@ -2485,7 +2624,17 @@ function setupRootDetectionBypass() {
         var ProcessBuilder = Java.use("java.lang.ProcessBuilder");
         ProcessBuilder.start.implementation = function() {
             var commands = this.command();
-            var command_str = commands.toString();
+            var command_str = commandListToString(commands);
+
+            if (commandContainsGetpropDeviceRegex(command_str)) {
+                var spoofCommand = buildSpoofedGetpropCommandArray();
+                commands.clear();
+                for (var i = 0; i < spoofCommand.length; i++) {
+                    commands.add(spoofCommand[i]);
+                }
+                logDebug("ProcessBuilder.start() getprop regex spoofed for: " + command_str);
+                return this.start();
+            }
 
             if (command_str.includes("su") || command_str.includes("busybox")) {
                 logDebug("ProcessBuilder.start() bypassed for: " + command_str);
